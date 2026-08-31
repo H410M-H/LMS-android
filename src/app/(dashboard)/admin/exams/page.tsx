@@ -61,6 +61,8 @@ import {
   Check
 } from "lucide-react";
 import Link from "next/link";
+import { DatesheetsViewerTab } from "~/components/blocks/exam/DatesheetsViewerTab";
+import { ExamResultsAnalyticsTab } from "~/components/blocks/exam/ExamResultsAnalyticsTab";
 
 // --- Interfaces ---
 interface Session {
@@ -98,6 +100,7 @@ interface DatesheetEntry {
 }
 
 const EXAM_TYPES = [
+  { value: "FIRST_TIME", label: "First Time" },
   { value: "MIDTERM", label: "Mid-Term" },
   { value: "FINAL", label: "Final" },
   { value: "PHASE_1", label: "Phase 1" },
@@ -186,7 +189,7 @@ export default function ExamManagementPage() {
       const res = await createExamMutation.mutateAsync({
         sessionId: selectedSession,
         classIds: createDialogClasses,
-        examTypeEnum: newExamData.examType as "MIDTERM" | "FINAL" | "PHASE_1" | "PHASE_2" | "PHASE_3" | "PHASE_4" | "PHASE_5" | "PHASE_6",
+        examTypeEnum: newExamData.examType as "FIRST_TIME" | "MIDTERM" | "FINAL" | "PHASE_1" | "PHASE_2" | "PHASE_3" | "PHASE_4" | "PHASE_5" | "PHASE_6",
         startDate: new Date(newExamData.startDate),
         endDate: new Date(newExamData.endDate),
         totalMarks: newExamData.totalMarks,
@@ -875,35 +878,19 @@ export default function ExamManagementPage() {
         </TabsContent>
 
         <TabsContent value="datesheets" className="m-0 duration-300 animate-in fade-in-50">
-          <Card className="border border-slate-200 bg-white shadow-sm dark:border-emerald-500/10 dark:bg-card">
-            <CardHeader>
-              <CardTitle>View Datesheets</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-border">
-                <div className="text-center text-muted-foreground">
-                  <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-20" />
-                  <p>Datesheets viewer coming soon</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <DatesheetsViewerTab
+            sessionId={selectedSessionId}
+            selectedClassId={selectedClassId}
+            onSelectClass={setSelectedClassId}
+          />
         </TabsContent>
 
         <TabsContent value="results" className="m-0 duration-300 animate-in fade-in-50">
-          <Card className="border border-slate-200 bg-white shadow-sm dark:border-emerald-500/10 dark:bg-card">
-            <CardHeader>
-              <CardTitle>Results Overview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-200 dark:border-border">
-                <div className="text-center text-muted-foreground">
-                  <FileText className="mx-auto mb-2 h-8 w-8 opacity-20" />
-                  <p>Results analytics coming soon</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <ExamResultsAnalyticsTab
+            sessionId={selectedSessionId}
+            selectedClassId={selectedClassId}
+            onSelectClass={setSelectedClassId}
+          />
         </TabsContent>
       </Tabs>
     </div>
