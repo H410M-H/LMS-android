@@ -6,6 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { api } from "~/trpc/react";
 import Link from "next/link";
+import { getParentagePrefix } from "~/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -114,7 +115,9 @@ export function EmployeeTable() {
       header: "Father Name",
       cell: ({ row }) => (
         <span className="text-slate-600 dark:text-foreground">
-          {row.original.fatherName}
+          {row.original.fatherName
+            ? `${getParentagePrefix(row.original.gender)} ${row.original.fatherName}`
+            : "-"}
         </span>
       ),
     },

@@ -33,6 +33,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
+import { getParentagePrefix } from "~/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -535,7 +536,7 @@ export default function EmployeeCredDetails() {
                         <div className="col-span-2 flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 p-2 text-muted-foreground">
                           <User className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
                           <span className="truncate text-foreground font-medium">
-                            S/O: {employee.fatherName}
+                            {getParentagePrefix(employee.gender)}: {employee.fatherName}
                           </span>
                         </div>
 

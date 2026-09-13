@@ -29,6 +29,7 @@ import {
   UserCheck,
   Camera,
 } from "lucide-react";
+import { getParentagePrefix } from "~/lib/utils";
 
 // --- Helper: InfoItem ---
 function InfoItem({
@@ -194,7 +195,7 @@ export default function EmployeeProfilePage() {
 
               <p className="flex items-center justify-center gap-2 text-base font-medium text-slate-300 md:justify-start">
                 <User className="h-4 w-4 text-emerald-400" />
-                S/O {employee.fatherName}
+                {getParentagePrefix(employee.gender)} {employee.fatherName}
               </p>
 
               <div className="flex flex-wrap justify-center gap-3 pt-1 md:justify-start">
@@ -277,6 +278,13 @@ export default function EmployeeProfilePage() {
                   icon={<Calendar className="h-4 w-4" />}
                 />
                 <InfoItem label="Gender" value={employee.gender} />
+                {employee.fatherName && (
+                  <InfoItem
+                    label={employee.gender?.toUpperCase() === "FEMALE" ? "Father Name (D/O)" : "Father Name (S/O)"}
+                    value={employee.fatherName}
+                    icon={<User className="h-4 w-4" />}
+                  />
+                )}
                 <InfoItem
                   label="CNIC"
                   value={employee.cnic}

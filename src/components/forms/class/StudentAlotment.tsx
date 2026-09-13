@@ -8,7 +8,7 @@ import { Check, ChevronsUpDown } from "lucide-react";
 
 import { api } from "~/trpc/react";
 import { useToast } from "~/hooks/use-toast";
-import { cn } from "~/lib/utils";
+import { cn, getParentagePrefix } from "~/lib/utils";
 
 import { Button } from "~/components/ui/button";
 import {
@@ -124,6 +124,7 @@ export default function AllotmentDialog({
       studentId: student.studentId,
       studentName: student.studentName,
       fatherName: student.fatherName,
+      gender: student.gender,
       admissionNumber: student.admissionNumber,
     })) ?? [];
 
@@ -269,7 +270,7 @@ export default function AllotmentDialog({
                             </span>
                             <span className="text-xs text-muted-foreground">
                               {student.fatherName &&
-                                `S/O ${student.fatherName}`}
+                                `${getParentagePrefix(student.gender)} ${student.fatherName}`}
                               {student.fatherName &&
                                 student.admissionNumber &&
                                 " • "}
