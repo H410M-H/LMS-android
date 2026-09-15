@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
-import { createTRPCRouter, protectedProcedure, managementProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure, managementProcedure, clerkProcedure } from "../trpc";
 import { z } from "zod";
 import { generatePdf } from "~/lib/pdf-reports";
-import { userReg } from "~/lib/utils";
 import { hash } from "bcryptjs";
+import { generateUniqueEmployeeCredentials } from "~/server/utils/credential-generator";
 
 // Define schema locally
 const employeeSchema = z.object({
@@ -81,10 +81,89 @@ export const EmployeeRouter = createTRPCRouter({
       });
     }
   }),
-  getEmployees: protectedProcedure.query(async ({ ctx }) => {
+  getEmployees: protectedProcedure
+    .input(
+      z
+        .object({
+          status: z.string().optional(),
+          excludeWorkers: z.boolean().optional(),
+          activeOnly: z.boolean().optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const whereClause: Record<string, unknown> = {};
+
+        if (input?.activeOnly || input?.status === "Active") {
+          whereClause.status = "Active";
+        } else if (input?.status === "Inactive" || input?.status === "Past") {
+          whereClause.status = { in: ["Left", "Retired"] };
+        } else if (input?.status && input.status !== "ALL") {
+          whereClause.status = input.status;
+        }
+
+        if (input?.excludeWorkers) {
+          whereClause.designation = { not: "WORKER" };
+        }
+
+        const employees = await ctx.db.employees.findMany({
+          where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
+          orderBy: { employeeName: "asc" },
+          include: {
+            BioMetric: {
+              select: {
+                fingerId: true,
+              },
+            },
+          },
+        });
+
+        return employees.map((employee) => {
+          if (employee.profilePic?.startsWith("/uploads/")) {
+            return { ...employee, profilePic: `/api${employee.profilePic}` };
+          }
+          return employee;
+        });
+      } catch (error) {
+        console.error(error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Something went wrong.",
+        });
+      }
+    }),
+
+  getAllEmployeesForTimeTable: protectedProcedure.query(async ({ ctx }) => {
+    try {
+      return await ctx.db.employees.findMany({
+        where: {
+          status: "Active",
+          designation: { not: "WORKER" },
+        },
+        select: {
+          employeeId: true,
+          employeeName: true,
+          designation: true,
+          education: true,
+        },
+        orderBy: { employeeName: "asc" },
+      });
+    } catch (error) {
+      console.error(error);
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Something went wrong.",
+      });
+    }
+  }),
+
+  getInactiveEmployees: protectedProcedure.query(async ({ ctx }) => {
     try {
       const employees = await ctx.db.employees.findMany({
-        // FIX: Changed from 'createdAt' (which doesn't exist) to 'employeeName'
+        where: {
+          status: { in: ["Left", "Retired"] },
+        },
         orderBy: { employeeName: "asc" },
         include: {
           BioMetric: {
@@ -105,26 +184,7 @@ export const EmployeeRouter = createTRPCRouter({
       console.error(error);
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Something went wrong.",
-      });
-    }
-  }),
-
-  getAllEmployeesForTimeTable: protectedProcedure.query(async ({ ctx }) => {
-    try {
-      return await ctx.db.employees.findMany({
-        select: {
-          employeeId: true,
-          employeeName: true,
-          designation: true,
-          education: true,
-        },
-      });
-    } catch (error) {
-      console.error(error);
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Something went wrong.",
+        message: "Failed to fetch inactive/past employees.",
       });
     }
   }),
@@ -214,45 +274,49 @@ export const EmployeeRouter = createTRPCRouter({
     }
   }),
 
-  createEmployee: managementProcedure
+  createEmployee: clerkProcedure
     .input(employeeSchema)
     .mutation(async ({ ctx, input }) => {
       try {
-        const usersCount = await ctx.db.user.count({
-          where: { accountType: input.designation as AccountTypeEnum },
-        });
+        return await ctx.db.$transaction(async (tx) => {
+          const credentials = await generateUniqueEmployeeCredentials(
+            tx,
+            input.designation,
+          );
 
-        const userInfo = userReg(usersCount, input.designation);
+          const newEmployee = await tx.employees.create({
+            data: {
+              ...input,
+              registrationNumber: credentials.accountId,
+              admissionNumber: credentials.admissionNumber,
+            },
+          });
 
-        const newEmployee = await ctx.db.employees.create({
-          data: {
-            ...input,
-            registrationNumber: userInfo.accountId,
-            admissionNumber: userInfo.admissionNumber,
-          },
-        });
+          const password = await hash(credentials.admissionNumber, 10);
+          await tx.user.create({
+            data: {
+              accountId: credentials.accountId,
+              username: credentials.username,
+              email: credentials.email.toLowerCase(),
+              password,
+              accountType: input.designation as AccountTypeEnum,
+            },
+          });
 
-        const password = await hash(userInfo.admissionNumber, 10);
-        await ctx.db.user.create({
-          data: {
-            accountId: userInfo.accountId,
-            username: userInfo.username,
-            email: userInfo.email.toLowerCase(),
-            password,
-            accountType: input.designation as AccountTypeEnum,
-          },
+          return newEmployee;
         });
-        return newEmployee;
       } catch (error) {
-        console.error(error);
+        console.error("Error creating employee:", error);
+        if (error instanceof TRPCError) throw error;
+        const msg = error instanceof Error ? error.message : "Failed to create employee";
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create employee",
+          message: msg,
         });
       }
     }),
 
-  updateEmployee: managementProcedure
+  updateEmployee: clerkProcedure
     .input(employeeSchema.extend({ employeeId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       try {
@@ -296,7 +360,7 @@ export const EmployeeRouter = createTRPCRouter({
     }),
 
   // Update both employee record and linked User account (username + email + designation)
-  updateEmployeeAndUser: managementProcedure
+  updateEmployeeAndUser: clerkProcedure
     .input(
       employeeSchema.extend({
         employeeId: z.string().min(1),
@@ -363,7 +427,7 @@ export const EmployeeRouter = createTRPCRouter({
       }
     }),
 
-  deleteEmployeesByIds: managementProcedure
+  deleteEmployeesByIds: clerkProcedure
     .input(
       z.object({
         employeeIds: z.string().array(),
@@ -382,6 +446,12 @@ export const EmployeeRouter = createTRPCRouter({
           },
         });
         const regNumbers = employeesToDelete.map((e) => e.registrationNumber);
+
+        const classSubjectsToDelete = await ctx.db.classSubject.findMany({
+          where: { employeeId: { in: input.employeeIds } },
+          select: { csId: true },
+        });
+        const csIdsToDelete = classSubjectsToDelete.map((c) => c.csId);
 
         const bulkPromoBatches = await ctx.db.bulkPromotionBatch.findMany({
           where: { initiatedBy: { in: input.employeeIds } },
@@ -413,6 +483,12 @@ export const EmployeeRouter = createTRPCRouter({
         });
         const poIds = pos.map((p) => p.poId);
 
+        const poLineItems = await ctx.db.purchaseOrderLineItem.findMany({
+          where: { poId: { in: poIds } },
+          select: { lineItemId: true },
+        });
+        const poLineItemIds = poLineItems.map((p) => p.lineItemId);
+
         const grns = await ctx.db.goodsReceiptNote.findMany({
           where: {
             OR: [
@@ -426,6 +502,8 @@ export const EmployeeRouter = createTRPCRouter({
 
         const [
           bioMetricDel,
+          marksDel,
+          subjectDiaryDel,
           classSubjectDel,
           timetableDel,
           salaryDel,
@@ -433,16 +511,16 @@ export const EmployeeRouter = createTRPCRouter({
           salaryIncrementDel,
           employeeAttendanceDel,
           leaveBalanceDel,
-          marksDel,
           promotionHistoryDel,
-          subjectDiaryDel,
           bulkPromoBatchItemDel,
           bulkPromoBatchDel,
           bulkSalaryCreationItemDel,
           bulkSalaryCreationBatchDel,
           leaveApprovalDel,
           leaveApplicationDel,
+          grnLineItemDel,
           goodsReceiptNoteDel,
+          poLineItemDel,
           purchaseOrderDel,
           directExpenseDel,
           budgetReallocationDel,
@@ -460,6 +538,22 @@ export const EmployeeRouter = createTRPCRouter({
           employeeDel
         ] = await ctx.db.$transaction([
           ctx.db.bioMetric.deleteMany({ where: { employeeId: { in: input.employeeIds } } }),
+          ctx.db.marks.deleteMany({
+            where: {
+              OR: [
+                { uploadedBy: { in: input.employeeIds } },
+                { classSubjectId: { in: csIdsToDelete } },
+              ],
+            },
+          }),
+          ctx.db.subjectDiary.deleteMany({
+            where: {
+              OR: [
+                { teacherId: { in: input.employeeIds } },
+                { classSubjectId: { in: csIdsToDelete } },
+              ],
+            },
+          }),
           ctx.db.classSubject.deleteMany({ where: { employeeId: { in: input.employeeIds } } }),
           ctx.db.timetable.deleteMany({ where: { employeeId: { in: input.employeeIds } } }),
           ctx.db.salary.deleteMany({ where: { employeeId: { in: input.employeeIds } } }),
@@ -467,9 +561,7 @@ export const EmployeeRouter = createTRPCRouter({
           ctx.db.salaryIncrement.deleteMany({ where: { employeeId: { in: input.employeeIds } } }),
           ctx.db.employeeAttendance.deleteMany({ where: { employeeId: { in: input.employeeIds } } }),
           ctx.db.leaveBalance.deleteMany({ where: { employeeId: { in: input.employeeIds } } }),
-          ctx.db.marks.deleteMany({ where: { uploadedBy: { in: input.employeeIds } } }),
           ctx.db.promotionHistory.deleteMany({ where: { promotedBy: { in: input.employeeIds } } }),
-          ctx.db.subjectDiary.deleteMany({ where: { teacherId: { in: input.employeeIds } } }),
           
           ctx.db.bulkPromotionBatchItem.deleteMany({ where: { batchId: { in: bulkPromoBatchIds } } }),
           ctx.db.bulkPromotionBatch.deleteMany({ where: { batchId: { in: bulkPromoBatchIds } } }),
@@ -493,7 +585,16 @@ export const EmployeeRouter = createTRPCRouter({
           }),
           ctx.db.leaveApplication.deleteMany({ where: { applicationId: { in: leaveAppIds } } }),
           
+          ctx.db.gRNLineItem.deleteMany({
+            where: {
+              OR: [
+                { grnId: { in: grnIds } },
+                { poLineItemId: { in: poLineItemIds } },
+              ],
+            },
+          }),
           ctx.db.goodsReceiptNote.deleteMany({ where: { grnId: { in: grnIds } } }),
+          ctx.db.purchaseOrderLineItem.deleteMany({ where: { poId: { in: poIds } } }),
           ctx.db.purchaseOrder.deleteMany({ where: { poId: { in: poIds } } }),
           
           ctx.db.directExpense.deleteMany({
@@ -533,7 +634,14 @@ export const EmployeeRouter = createTRPCRouter({
             data: { assignedToId: null }
           }),
           
-          ctx.db.user.deleteMany({ where: { accountId: { in: regNumbers } } }),
+          ctx.db.user.deleteMany({
+            where: {
+              OR: [
+                { accountId: { in: regNumbers } },
+                { username: { in: regNumbers } },
+              ],
+            },
+          }),
           ctx.db.employees.deleteMany({
             where: {
               employeeId: {
@@ -657,25 +765,6 @@ export const EmployeeRouter = createTRPCRouter({
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Failed to generate report",
-      });
-    }
-  }),
-
-  getInactiveEmployees: protectedProcedure.query(async ({ ctx }) => {
-    try {
-      return await ctx.db.employees.findMany({
-        where: {
-          status: {
-            in: ["Retired", "Left"],
-          },
-        },
-        orderBy: { employeeName: "asc" },
-      });
-    } catch (error) {
-      console.error(error);
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to fetch inactive employees",
       });
     }
   }),

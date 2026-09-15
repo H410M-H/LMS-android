@@ -170,8 +170,13 @@ export const feeRouter = createTRPCRouter({
     .input(z.object({ feeIds: z.array(z.string()) }))
     .mutation(async ({ ctx, input }) => {
       try {
-        await ctx.db.fees.deleteMany({
-          where: { feeId: { in: input.feeIds } },
+        await ctx.db.$transaction(async (tx) => {
+          await tx.feeStudentClass.deleteMany({
+            where: { feeId: { in: input.feeIds } },
+          });
+          await tx.fees.deleteMany({
+            where: { feeId: { in: input.feeIds } },
+          });
         });
         return { success: true };
       } catch (error) {
@@ -536,6 +541,7 @@ export const feeRouter = createTRPCRouter({
               registrationNumber: f.StudentClass.Students.registrationNumber,
               fatherName: f.StudentClass.Students.fatherName,
               fatherMobile: f.StudentClass.Students.fatherMobile,
+              gender: f.StudentClass.Students.gender,
             },
             class: {
               grade: f.StudentClass.Grades.grade,
