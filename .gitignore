@@ -49,3 +49,7 @@ yarn-error.log*
 graphify-out/
 railway-lmsbackup.dump.sql
 .env*
+
+# agents
+.agents/
+agents/

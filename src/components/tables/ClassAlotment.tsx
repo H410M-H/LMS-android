@@ -46,6 +46,7 @@ interface StudentClassWithRelations {
     section?: string;
     studentName: string;
     fatherName: string;
+    gender?: string;
     guardianName?: string | null;
     gender?: string;
   };

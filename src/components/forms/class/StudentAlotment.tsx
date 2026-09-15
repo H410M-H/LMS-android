@@ -124,6 +124,7 @@ export default function AllotmentDialog({
       studentId: student.studentId,
       studentName: student.studentName,
       fatherName: student.fatherName,
+      gender: student.gender,
       admissionNumber: student.admissionNumber,
       gender: student.gender,
     })) ?? [];
